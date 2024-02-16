@@ -1,0 +1,17 @@
+{
+    "name": "MasterLT_EPOS4Library",
+    "authors": {
+        "name": "maxon Motor Australia"
+    },
+    "platforms": [
+        "espressif32"
+    ],
+    "frameworks": "espidf",
+    "build": {
+        "flags": [
+            "-I.",
+            "-L.",
+            "-lEPOS4Class"
+        ]
+    }
+}
