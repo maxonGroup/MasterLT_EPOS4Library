@@ -78,5 +78,5 @@ For any queries, please contact:
 * Dr. Carlos Bacigalupo - carlos.bacigalupo@maxongroup.com
 * Mr. Mihir Joshi - mihir.joshi@maxongroup.com
 
-Project Link: [https://github.com/maxonGroup/MasterLT_EPOS4Demo](https://github.com/maxonGroup/MasterLT_EPOS4Demo.git)
+Project Link: [https://github.com/maxonGroup/MasterLT_EPOS4Library](https://github.com/maxonGroup/MasterLT_EPOS4Library.git)
 
