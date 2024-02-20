@@ -59,7 +59,7 @@ Rebuild the platformio project after the .ini file has been modified.
 
 ## Useful Documents
 
-* [EPOS4 Class Library Documentation](https://www.google.com/) 
+* [EPOS4 Class Library Documentation](https://www.maxongroup.net.au/medias/sys_master/root/9233349345310/2402-EPOS4Class-Documentation.pdf) 
 * [MasterLT_EPOS4Demo repository](https://github.com/maxonGroup/MasterLT_EPOS4Demo)
 
 
