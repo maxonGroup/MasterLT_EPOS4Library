@@ -2,54 +2,44 @@
  * @file EPOS4Class.hpp
  * @authors Harrison Harding, Carlos Bacigalupo, Mihir Joshi, maxon motor Australia
  * @brief Command library to operate the EPOS4 via CAN
- * @version 0.10.0
- * @date 2024-02-15
+ * @version 0.11.0
+ * @date 2024-03-21
  * 
  * @copyright Copyright (c) 2022 - 2024
  * 
  */
 
 /**Changelog V0.10.0
- * Integrated Byte size into EPOS_OD enum values
- * Documentation Overhaul
- * Error Handling Overhaul
- * local Object Dictionary Overhaul
+ * Seperated out ESP-IDF specific functions to allow use on other platforms.
  * 
  * Added:
- * simplified OD access functions
+ * SetErrorFunction, SetInfoFunction, SetDebugFunction for assigning logging functions
+ * SetGetTimeFunction, SetWaitFunction for assigning system time functions
+ * SetCanTxFunction for assigning a CAN frame transmission function
  * 
  * Removed:
- * BYTE_LENGTH_t type
+ * CAN driver setup function, Moved to ESP32 Helper files.
  * 
  * Minor Changes:
- * Errors merged into one enum, categorised by type: Master, EPOS4, SDO
+ * Time since last heartbeat now measured in milliseconds instead of FreeRTOS ticks (msSinceHeartbeat())
  * 
- * Major Changes:
- * Should be fully backwards compatible in terms of function, except some names.
- * byte size arguments in all cases where it was used previously removed.
- * For uses where EPOS_OD enum was being cast to, the new function getIndexFromNoLength() may be used.
- * Node agnostic functions now need their namespace declared, 'EPOS4::'
  */
 
-
-//#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
-#include "esp_log.h"
+#pragma once
 
 #include <stdbool.h>
 #include <map>
 #include <vector>
-#include "driver/twai.h"
 #include <stdio.h>
 #include <string>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define wait(t) vTaskDelay(t / portTICK_PERIOD_MS);
-const int SDO_TIMOUT_TICKS = 100 / portTICK_PERIOD_MS; //100 milliseconds
+//#define wait(t) vTaskDelay(t / portTICK_PERIOD_MS);
+const int SDO_TIMOUT_MS = 100; //100 milliseconds
 
 #ifdef CONFIG_IDF_TARGET_ESP32S3 //if gen 2 (gen2 uses ESP32S3)
     #define CAN_TX_PIN GPIO_NUM_36
@@ -768,6 +758,23 @@ typedef struct PDO_MAPPING{
 } PDO_MAPPING_t;
 
 
+/**
+ * @brief   Structure to store a CAN message
+ *
+ * @note    The flags member is deprecated
+ */
+typedef struct {
+    uint32_t flags;                 /**< Deprecated: Alternate way to set bits using message flags */
+    uint32_t identifier;                /**< 11 or 29 bit identifier */
+    uint8_t data_length_code;           /**< Data length code */
+    uint8_t data[8];    /**< Data bytes (not relevant in RTR frame) */
+} CAN_MESSAGE_t;
+
+
+#define TWAI_MSG_FLAG_NONE              0x00        /**< No message flags (Standard Frame Format) */
+#define TWAI_MSG_FLAG_RTR               0x02        /**< Message is a Remote Frame */
+
+
 
 
 
@@ -778,7 +785,7 @@ class EPOS4 {
 
         std::map<uint32_t, PDO_MAPPING_t> m_PDOMap; //PDO COB-ID to map object
         std::map<std::string, uint32_t> m_PDOCOB_IDs;
-        TickType_t last_heartbeat;
+        uint32_t last_heartbeat;
         uint16_t unknownBadSDO = 0;
 
         //outdated docu
@@ -824,7 +831,7 @@ class EPOS4 {
         *@{*****************************************************************************/
 
         
-        NMT_STATE lastHbNMT = NMT_STATE_BOOTUP;
+        NMT_STATE_t lastHbNMT = NMT_STATE_BOOTUP;
 
 
 
@@ -912,6 +919,14 @@ class EPOS4 {
         *@{*****************************************************************************/
 
 
+        static void setErrorFunction(void (*userfunc)(const char* tag, const char* format, ...));
+        static void setInfoFunction(void (*userfunc)(const char* tag, const char* format, ...));
+        static void setDebugFunction(void (*userfunc)(const char* tag, const char* format, ...));
+
+        static void setWaitFunction(void (*userfunc)(uint32_t timeMS));
+        static void setGetTimeFunction(uint32_t (*userfunc)());
+        static void setCanTxFunction(ERROR_CODE_t (*userfunc)(CAN_MESSAGE_t* canFrame));
+
 
 
         /********************************************************************************
@@ -932,23 +947,6 @@ class EPOS4 {
         ********************************************************************************/ 
         static ERROR_CODE_t changeNMTState(NMT_COMMAND_t NMTCommand, uint8_t nodeID = 0x00);
 
-
-        /********************************************************************************
-         * @brief Runs the initialisation routine for the CAN bus Driver.
-         * 
-         * @param timingConfig The timing configuration for the CAN driver. \n 
-         * Transmission rates can be 20, 50, 125, 250, 500, 800 kbit/s, or 1 Mbit/s.
-         * Default 125 kbit/s.
-         * @param ABRSetup If **all** nodes on the CAN bus are set to Auto Bit Rate, 
-         * set this to true. Default False.
-         * @param TxIONum IO pin to used for TX. 
-         * Default CAN_TX_PIN = 21 (MiniMasterLT), 36 (MicroMasterLT)
-         * @param RxIONum IO pin to used for RX. 
-         * Default CAN_RX_PIN = 22 (MiniMasterLT), 37 (MicroMasterLT)
-         * @return ERROR_CODE_t: ERROR_CODE_NOERROR when successful.
-        ********************************************************************************/ 
-        static ERROR_CODE_t TWAISetup(twai_timing_config_t timingConfig = TWAI_TIMING_CONFIG_125KBITS(), bool ABRSetup = false, gpio_num_t TxIONum = CAN_TX_PIN, gpio_num_t RxIONum = CAN_RX_PIN);
-        
 
         /********************************************************************************
          * @brief Broadcast a Heartbeat frame onto the CAN bus.
@@ -979,7 +977,7 @@ class EPOS4 {
          * @return EPOS_ERROR_CODE_t: 
          * If an EPOS4 or CAN SDO error was received, this will be the error type. 
         ********************************************************************************/
-        ERROR_CODE_t receiver(const twai_message_t message);
+        ERROR_CODE_t receiver(const CAN_MESSAGE_t message);
 
 
         /********************************************************************************
@@ -996,14 +994,13 @@ class EPOS4 {
 
 
         /********************************************************************************
-         * @brief Returns the number of ticks passed between now and 
+         * @brief Returns the number of milliseconds passed between now and 
          * the time the last heartbeat was received from the EPOS4.
          * 
-         * @return TickType_t: 
-         * The number of ticks since the last heartbeat was received. \n 
-         * Multiply by portTICK_RATE_MS to get milliseconds.
+         * @return uint32_t: 
+         * The number of milliseconds since the last heartbeat was received.
         ********************************************************************************/
-        TickType_t ticksSinceHeartbeat();
+        uint32_t msSinceHeartbeat();
 
         
         /********************************************************************************
